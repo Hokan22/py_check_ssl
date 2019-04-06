@@ -1,0 +1,90 @@
+#!/usr/bin/env python
+
+import ssl
+import OpenSSL
+import getopt
+import sys
+from datetime import date
+
+
+def print_usage():
+    print("Usage: $PROGNAME -H <host> [-p <port>] [-c <low>:<high>] [-w <low>:<high>]\n")
+
+
+programName = 'check_ssl_certificates'
+
+monVal = {"01": 'Jan', "02": 'Feb', "03": 'Mar', "04": 'Apr', "05": 'May', "06": 'Jun', "07": 'Jul', "08": 'Aug',
+          "09": 'Sep', "10": 'Oct', "11": 'Nov', "12": 'Dec'}
+year = ''
+month = ''
+day = ''
+hour = ''
+minute = ''
+second = ''
+
+CN = ''
+daysLeft = 0
+
+Host = ''
+port = '443'
+warning = 30
+critical = 7
+
+try:
+    opts, args = getopt.getopt(sys.argv[1:], "hH:p:w:c:")
+except getopt.GetoptError:
+    print_usage()
+    sys.exit(2)
+
+for opt, arg in opts:
+    if opt == '-h':
+        print_usage()
+        sys.exit()
+
+    elif opt in ("-H",):
+        Host = arg
+
+    elif opt in ("-p",):
+        port = int(arg)
+
+    elif opt in ("-w",):
+        warning = int(arg)
+
+    elif opt in ("-c",):
+        critical = int(arg)
+
+try:
+    cert = ssl.get_server_certificate((Host, port))
+    x509 = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, cert)
+
+    expire = x509.get_notAfter()
+
+    CN = x509.get_subject().CN
+
+    year = expire[0:4]
+    month = expire[4:6]
+    day = expire[6:8]
+    hour = expire[8:10]
+    minute = expire[10:12]
+    second = expire[12:14]
+
+    expDate = date(int(year), int(month), int(day))
+    today = date.today()
+    daysLeft = (expDate - today).days
+
+except:
+    print("%s: CRITICAL - could not get certificate for '%s' on port '%s'.\n" % (programName, Host, port))
+    sys.exit(2)
+    pass
+
+
+print("m=%s, d=%s, h=%s, m=%s, s=%s, y=%s, z=GMT" %
+      (monVal[month], day, hour, minute, second, year))
+
+if daysLeft < 0:
+    print("%s: CRITICAL - %s expired %s day(s) ago.\n" % (programName, CN, abs(daysLeft)))
+elif daysLeft <= critical:
+    print("%s: CRITICAL - only %s day(s) left for %s.\n" % (programName, daysLeft, CN))
+elif daysLeft <= warning:
+    print("%s: WARNING - only %s day(s) left for %s.\n" % (programName, daysLeft, CN))
+
